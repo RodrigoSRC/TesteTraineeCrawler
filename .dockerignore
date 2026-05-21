@@ -1,0 +1,13 @@
+node_modules
+output
+coverage
+.git
+.gitignore
+*.log
+.env
+.env.*
+!.env.example
+ETAPAS.local.md
+tests
+*.md
+!README.md
