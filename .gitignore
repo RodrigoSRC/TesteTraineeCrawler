@@ -1,0 +1,9 @@
+node_modules/
+output/*
+!output/.gitkeep
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
