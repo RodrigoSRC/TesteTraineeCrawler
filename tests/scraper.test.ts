@@ -8,7 +8,7 @@ import {
 } from '../src/parser';
 import { booksToCsv, saveCsv } from '../src/saveCsv';
 import { saveJson } from '../src/saveJson';
-import { scrapeAllBooks } from '../src/scraper';
+import { getNextPageUrl, scrapeAllBooks } from '../src/scraper';
 import type { Book } from '../src/types';
 
 const SAMPLE_LIST_HTML = `
@@ -104,10 +104,75 @@ describe('exporters', () => {
   });
 });
 
+const PAGE_WITH_NEXT_HTML = `
+  <html><body>
+    <ul class="pager">
+      <li class="next"><a href="catalogue/page-2.html">next</a></li>
+    </ul>
+  </body></html>
+`;
+
+const PAGE_WITHOUT_NEXT_HTML = `
+  <html><body>
+    <ul class="pager"></ul>
+  </body></html>
+`;
+
 describe('scraper', () => {
-  it('deve indicar que a coleta completa ainda não foi implementada', async () => {
-    await expect(scrapeAllBooks()).rejects.toThrow(
-      'scrapeAllBooks ainda não implementado',
+  it('deve extrair URL absoluta da próxima página', () => {
+    const nextUrl = getNextPageUrl(
+      PAGE_WITH_NEXT_HTML,
+      'https://books.toscrape.com/index.html',
     );
+
+    expect(nextUrl).toBe('https://books.toscrape.com/catalogue/page-2.html');
+  });
+
+  it('deve retornar null na última página', () => {
+    const nextUrl = getNextPageUrl(
+      PAGE_WITHOUT_NEXT_HTML,
+      'https://books.toscrape.com/catalogue/page-50.html',
+    );
+
+    expect(nextUrl).toBeNull();
+  });
+
+  it('deve percorrer todas as páginas mockadas e acumular livros', async () => {
+    const page1Html = SAMPLE_LIST_HTML.replace(
+      '</body>',
+      '<ul class="pager"><li class="next"><a href="catalogue/page-2.html">next</a></li></ul></body>',
+    );
+    const page2Html = SAMPLE_LIST_HTML;
+
+    const fetchPage = jest
+      .fn()
+      .mockResolvedValueOnce(page1Html)
+      .mockResolvedValueOnce(page2Html);
+    const sleep = jest.fn().mockResolvedValue(undefined);
+
+    const config = {
+      baseUrl: 'https://books.toscrape.com',
+      userAgent: 'test-agent',
+      delayMs: 0,
+      timeoutMs: 5_000,
+    };
+
+    const books = await scrapeAllBooks(config, { fetchPage, sleep });
+
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(fetchPage).toHaveBeenNthCalledWith(
+      1,
+      'https://books.toscrape.com/index.html',
+      config,
+    );
+    expect(fetchPage).toHaveBeenNthCalledWith(
+      2,
+      'https://books.toscrape.com/catalogue/page-2.html',
+      config,
+    );
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(books).toHaveLength(2);
+    expect(books[0]).toEqual(sampleBook);
+    expect(books[1]).toEqual(sampleBook);
   });
 });
