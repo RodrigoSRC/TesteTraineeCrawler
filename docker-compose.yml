@@ -16,6 +16,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   scraper:
     build: .
@@ -24,8 +25,9 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://scraper:scraper@db:5432/books
+      OUTPUT_DIR: /app/data
     volumes:
-      - ./output:/app/output
+      - ./output:/app/data
 
 volumes:
   postgres_data:

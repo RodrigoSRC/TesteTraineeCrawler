@@ -96,9 +96,17 @@ Stack local com **scraper + PostgreSQL 16** para persistência além de JSON/CSV
 docker compose up --build
 ```
 
-O serviço `db` sobe com healthcheck; o `scraper` só inicia após o Postgres estar pronto. Arquivos continuam em `output/` via volume montado.
+O serviço `db` sobe com healthcheck; o `scraper` só inicia após o Postgres estar pronto. JSON/CSV vão para `output/` no host (`OUTPUT_DIR=/app/data` — o volume **não** sobrescreve o JS compilado em `/app/output`).
 
-**Comportamento esperado:** logs do scraper com `Scraping concluído: 1000 livros salvos em output/ + 1000 no PostgreSQL`, depois o container encerra.
+**Comportamento esperado:** logs do scraper com `Scraping concluído: 1000 livros salvos em /app/data/ + 1000 no PostgreSQL`, depois o container encerra. O Postgres (`db`) **permanece rodando** para consultas.
+
+**Fluxo recomendado para testar:**
+
+```bash
+docker compose up db -d          # Postgres em background
+docker compose up scraper --build # build + scrape (~1–2 min)
+docker compose exec db psql -U scraper -d books -c "SELECT COUNT(*) FROM books;"
+```
 
 Conferir dados no banco (com stack rodando ou após subir só o Postgres):
 

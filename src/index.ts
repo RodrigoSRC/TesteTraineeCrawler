@@ -10,6 +10,7 @@ import {
   isDatabasePersistenceEnabled,
   saveBooksToPostgres,
 } from './savePostgres';
+import { getDataOutputDir } from './outputPaths';
 import { DEFAULT_SCRAPER_CONFIG } from './types';
 
 async function main(): Promise<void> {
@@ -47,7 +48,7 @@ async function main(): Promise<void> {
       : '';
 
   console.log(
-    `Scraping concluído: ${books.length} livros salvos em output/${aiSuffix}${dbSuffix}`,
+    `Scraping concluído: ${books.length} livros salvos em ${getDataOutputDir()}/${aiSuffix}${dbSuffix}`,
   );
 }
 

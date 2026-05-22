@@ -1,8 +1,9 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { getDataOutputDir } from './outputPaths';
 import type { Book } from './types';
 
-const DEFAULT_OUTPUT_PATH = path.join(process.cwd(), 'output', 'books.json');
+const DEFAULT_OUTPUT_PATH = path.join(getDataOutputDir(), 'books.json');
 
 export async function saveJson(
   books: Book[],
