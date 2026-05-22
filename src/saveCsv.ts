@@ -4,7 +4,7 @@ import type { Book } from './types';
 
 const DEFAULT_OUTPUT_PATH = path.join(process.cwd(), 'output', 'books.csv');
 
-const CSV_HEADERS = [
+const BASE_CSV_HEADERS = [
   'title',
   'price',
   'priceFormatted',
@@ -12,7 +12,34 @@ const CSV_HEADERS = [
   'availability',
   'url',
   'imageUrl',
-] as const satisfies readonly (keyof Book)[];
+] as const;
+
+const AI_CSV_HEADERS = ['description', 'genres', 'summary'] as const;
+
+type BaseCsvField = (typeof BASE_CSV_HEADERS)[number];
+type AiCsvField = (typeof AI_CSV_HEADERS)[number];
+type CsvField = BaseCsvField | AiCsvField;
+
+function getCsvHeaders(books: Book[]): readonly CsvField[] {
+  const hasAiFields = books.some(
+    (book) => book.description || book.genres?.length || book.summary,
+  );
+
+  return hasAiFields ? [...BASE_CSV_HEADERS, ...AI_CSV_HEADERS] : BASE_CSV_HEADERS;
+}
+
+function getCsvFieldValue(book: Book, field: CsvField): string | number {
+  if (field === 'genres') {
+    return book.genres?.join('; ') ?? '';
+  }
+
+  const value = book[field as keyof Book];
+  if (typeof value === 'string' || typeof value === 'number') {
+    return value;
+  }
+
+  return '';
+}
 
 function escapeCsvField(value: string | number): string {
   const text = String(value);
@@ -24,9 +51,10 @@ function escapeCsvField(value: string | number): string {
 }
 
 export function booksToCsv(books: Book[]): string {
-  const headerLine = CSV_HEADERS.join(',');
+  const headers = getCsvHeaders(books);
+  const headerLine = headers.join(',');
   const rows = books.map((book) =>
-    CSV_HEADERS.map((field) => escapeCsvField(book[field])).join(','),
+    headers.map((field) => escapeCsvField(getCsvFieldValue(book, field))).join(','),
   );
 
   return [headerLine, ...rows].join('\n');

@@ -1,3 +1,8 @@
+export interface BookClassification {
+  genres: string[];
+  summary: string;
+}
+
 export interface Book {
   title: string;
   price: number;
@@ -6,6 +11,18 @@ export interface Book {
   availability: string;
   url: string;
   imageUrl: string;
+  /** Texto livre da página de detalhe (quando enriquecimento IA está ativo). */
+  description?: string;
+  /** Gêneros inferidos por LLM a partir da descrição. */
+  genres?: string[];
+  /** Resumo de uma frase gerado por LLM. */
+  summary?: string;
+}
+
+export interface AiClassifierConfig {
+  apiKey: string;
+  apiUrl: string;
+  model: string;
 }
 
 export interface ScraperConfig {
