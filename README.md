@@ -1,58 +1,293 @@
 # TesteTraineeCrawler
 
-Scraper Node.js + TypeScript para o desafio técnico Crawler/RPA & IA (books.toscrape.com).
+Scraper em **Node.js + TypeScript** para o desafio técnico **Crawler/RPA & IA** (IN8 / Devnology).
 
-## Estrutura
+Coleta dados de [books.toscrape.com](https://books.toscrape.com), persiste em JSON/CSV e roda em pipeline **GitLab CI/CD** com imagem **Docker**.
 
-```
-src/
-  types.ts         # schema Book e configuração do scraper
-  scraper.ts       # requisições HTTP e paginação
-  parser.ts        # extração de dados com Cheerio
-  saveJson.ts      # persistência em output/books.json
-  saveCsv.ts       # persistência em output/books.csv
-  aiClassifier.ts  # bônus: classificação via LLM (pendente)
-  index.ts         # orquestra o pipeline
-tests/
-  scraper.test.ts  # testes de parser, exportação e scraper
-output/            # artefatos gerados (build + dados)
-```
+---
 
 ## Pré-requisitos
 
-- Node.js 20+
+- **Node.js 20+**
+- **Docker Desktop** (opcional, para execução containerizada)
 
-## Instalação
+---
+
+## Como rodar
+
+### Localmente (sem Docker)
 
 ```bash
 npm install
+npm run check          # typecheck + lint + testes
+npm run build && npm start
 ```
 
-## Scripts
+Arquivos gerados em `output/`:
+
+- `books.json` — ~1000 livros
+- `books.csv` — mesma base em formato tabular
+
+### Com Docker
+
+```bash
+# Build da imagem
+docker build -t teste-trainee-crawler .
+
+# Execução (monta output/ local para persistir os arquivos)
+docker run --rm -v "${PWD}/output:/app/output" teste-trainee-crawler
+```
+
+No PowerShell (Windows), o volume funciona da mesma forma:
+
+```powershell
+docker run --rm -v "${PWD}/output:/app/output" teste-trainee-crawler
+```
+
+**Comportamento esperado:** o container executa o scraper, imprime `Scraping concluído: 1000 livros salvos em output/` e **encerra**. Com `--rm`, o container some após terminar — isso é normal para um job batch.
+
+---
+
+## Estrutura do projeto
+
+```
+src/
+  index.ts         # orquestra scrape → JSON → CSV
+  scraper.ts       # HTTP, paginação, delay
+  parser.ts        # extração com Cheerio
+  saveJson.ts      # persistência JSON
+  saveCsv.ts       # persistência CSV
+  types.ts         # schema Book e config
+  aiClassifier.ts  # bônus LLM (stub, não integrado)
+tests/
+  scraper.test.ts  # parser, exportação e paginação mockada
+output/            # build compilado + dados gerados
+Dockerfile
+.dockerignore
+.gitlab-ci.yml
+```
+
+---
+
+## Schema dos dados
+
+Cada livro segue a interface `Book`:
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `title` | `string` | Título do livro |
+| `price` | `number` | Preço numérico (ex.: `51.77`) |
+| `priceFormatted` | `string` | Preço original com símbolo (ex.: `£51.77`) |
+| `rating` | `number` | Estrelas de 1 a 5 (0 se ausente) |
+| `availability` | `string` | Texto de disponibilidade (ex.: `In stock`) |
+| `url` | `string` | URL absoluta da página do livro |
+| `imageUrl` | `string` | URL absoluta da capa |
+
+### Exemplo JSON
+
+```json
+{
+  "title": "A Light in the Attic",
+  "price": 51.77,
+  "priceFormatted": "£51.77",
+  "rating": 3,
+  "availability": "In stock",
+  "url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+  "imageUrl": "https://books.toscrape.com/media/cache/2c/da/2cdad67c44b002e7ead0cc35693c0e8b.jpg"
+}
+```
+
+O arquivo `output/books.json` é um **array** com ~1000 objetos nesse formato.
+
+### Exemplo CSV
+
+Header fixo (ordem das colunas):
+
+```csv
+title,price,priceFormatted,rating,availability,url,imageUrl
+A Light in the Attic,51.77,£51.77,3,In stock,https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html,https://books.toscrape.com/media/cache/2c/da/2cdad67c44b002e7ead0cc35693c0e8b.jpg
+```
+
+Campos com vírgula ou aspas são escapados conforme RFC 4180.
+
+---
+
+## Pipeline GitLab CI/CD
+
+Arquivo: [`.gitlab-ci.yml`](.gitlab-ci.yml)
+
+Fluxo: **lint → test → build → deploy**
+
+```mermaid
+flowchart LR
+  push[Push / MR] --> lint[lint]
+  lint --> test[test]
+  test --> build[build Docker]
+  build --> deploy[deploy ECS simulado]
+  deploy --> done[Só na main]
+```
+
+### Stage `lint`
+
+- Imagem: `node:20-alpine`
+- Comandos: `npm ci` → `npm run lint` (ESLint)
+- **Falha** se houver erro de lint
+
+### Stage `test`
+
+- Comandos: `npm ci` → `npm test` (Jest)
+- Cobre parser, exportação JSON/CSV e paginação **mockada** (sem bater no site real)
+- **Falha** se algum teste falhar
+
+### Stage `build`
+
+- Imagem `docker:24` + serviço Docker-in-Docker
+- `docker build` usando o [Dockerfile](Dockerfile)
+- Push para o **GitLab Container Registry** com tags:
+  - `$CI_COMMIT_SHORT_SHA` (hash do commit)
+  - `latest`
+- Variáveis usadas: `CI_REGISTRY`, `CI_REGISTRY_IMAGE`, `CI_REGISTRY_USER`, `CI_REGISTRY_PASSWORD`
+- Roda em **Merge Requests** e na branch `main`
+
+### Stage `deploy`
+
+- **Somente na branch `main`**
+- Simula deploy na **AWS ECS** com comandos `echo` (não executa AWS de fato)
+- Exemplo do que seria executado em produção: login ECR, `register-task-definition`, `update-service`, `wait services-stable`
+
+### Cache (bônus)
+
+Jobs `lint` e `test` compartilham cache de `node_modules/` keyed por `package-lock.json`, acelerando `npm ci` entre pipelines.
+
+---
+
+## Decisões técnicas
+
+### Node.js + TypeScript (em vez de Go)
+
+Escolhi a stack que permitia iterar rápido com tipagem estática, ecossistema maduro para HTTP/parsing e testes (Jest). O desafio permite outra linguagem.
+
+### Cheerio para parsing
+
+O site é **HTML estático** — não exige browser headless. Cheerio é leve, rápido e suficiente para seletores como `article.product_pod` e `li.next a`.
+
+### Rating via classe CSS
+
+O site expõe estrelas em classes (`star-rating Three`, etc.). Mapeio explícito para número 1–5 em `mapStarRating`, com fallback `0` se a classe não existir.
+
+### URLs absolutas
+
+Links e imagens vêm relativos no HTML. Uso `new URL(href, baseUrl)` para normalizar — importante para consumo downstream (CSV, integrações).
+
+### Paginação
+
+Loop em `scrapeAllBooks`: `fetchPage` → `parseBooksFromHtml` → `getNextPageUrl` (`li.next a`) até não haver próxima página. Delay de **500 ms** entre páginas (`DEFAULT_SCRAPER_CONFIG.delayMs`), sem delay após a última.
+
+### User-Agent identificável
+
+`TesteTraineeCrawler/1.0 (trainee technical challenge)` — transparência para o servidor, conforme regras do desafio.
+
+### Scraper como job batch (sem `EXPOSE`)
+
+O scraper **não é um servidor HTTP**. Ele roda `node output/index.js`, coleta dados, grava arquivos e **encerra**.
+
+Por isso **não há `EXPOSE` de porta** no Dockerfile: a “porta correta” neste contexto é **nenhuma**. Em produção, rodaria como **task ECS agendada** (EventBridge/cron) ou job one-shot, não como serviço com load balancer.
+
+### Dockerfile multi-stage
+
+| Stage | Função |
+|-------|--------|
+| `builder` | `npm ci` completo + `npm run build` (TypeScript → JavaScript) |
+| `runtime` | `npm ci --omit=dev` (só `axios` e `cheerio`) + JS compilado copiado de `builder` |
+
+Benefícios: imagem final menor, sem Jest/ESLint/TypeScript, usuário **non-root** (`scraper`).
+
+### Testes de paginação inline
+
+Testes de `getNextPageUrl` e `scrapeAllBooks` usam HTML mockado **inline** no arquivo de teste, sem fixtures externas — suficiente para o desafio e evita dependência do site no CI.
+
+### Injeção de dependências no scraper
+
+`scrapeAllBooks` aceita `fetchPage` e `sleep` opcionais — facilita testes unitários sem rede.
+
+---
+
+## O que faria com mais tempo
+
+| Área | Melhoria |
+|------|----------|
+| **Resiliência** | Retry com backoff exponencial, circuit breaker, logging estruturado |
+| **Anti-bot** | Rotação de User-Agent, proxies, rate limiting configurável |
+| **Observabilidade** | Métricas (livros/min, erros por página), alertas, traces |
+| **Scrapy / fila** | Para escala: filas (SQS/RabbitMQ), workers paralelos com limites |
+| **IA (bônus)** | Integrar `aiClassifier.ts` para enriquecer descrições dos livros via LLM |
+| **Persistência** | `docker-compose` com PostgreSQL + upsert incremental |
+| **CI** | Scan de vulnerabilidades na imagem (Trivy), deploy real via Terraform |
+
+---
+
+## Uso de Inteligência Artificial
+
+O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **Cursor (Claude)** durante o projeto.
+
+### O que funcionou bem
+
+| Unde usei | Prompt / abordagem | Resultado |
+|-----------|-------------------|-----------|
+| Setup inicial | Estrutura modular (`parser`, `scraper`, exporters), Jest, ESLint | Base organizada rapidamente |
+| Paginação | Implementar `scrapeAllBooks`, `getNextPageUrl`, testes mockados | Scraper completo (~1000 livros) |
+| Dockerfile | Multi-stage, non-root, Alpine, comentários | Build e run validados localmente |
+| GitLab CI | Stages lint/test/build/deploy, cache npm, variáveis de registry | Pipeline alinhado ao PDF |
+| Dúvidas conceituais | “Por que container batch não expõe porta?”, “O que é multi-stage?” | Acelerei aprendizado de Docker/CI |
+
+### O que não funcionou / ajustes que fiz
+
+| Situação | Lição |
+|----------|-------|
+| IA sugeriu fixtures HTML separadas para testes de paginação | Já havia testes inline suficientes — **reverti** o que era capricho, não requisito |
+| Erro de schema no `.gitlab-ci.yml` (`:` no YAML) | Aprendi que colons em strings precisam de aspas simples no YAML |
+| Tentativa de “completar etapa” sem questionar | Passo a validar se cada entrega está no PDF antes de adicionar complexidade |
+
+### Aprendizados pessoais (via IA + prática)
+
+- **Job batch vs servidor web:** nem todo container precisa de porta; scraper roda, salva e morre.
+- **Multi-stage Docker:** stage `builder` compila; stage `runtime` só executa — copio só `output/` com `COPY --from=builder`.
+- **Cache de camadas Docker:** separar `COPY package.json` + `npm ci` de `COPY src` evita reinstalar deps a cada mudança de código.
+- **GitLab CI ≠ GitHub Actions:** mesma ideia (automatizar push), sintaxe e variáveis diferentes.
+- **IA como pair programmer:** ótima para boilerplate e explicações; decisão de escopo e revisão crítica continuam humanas.
+
+### O que **não** foi gerado por IA
+
+- Validação manual dos 1000 livros e conferência de URLs/preços no site
+- Decisão de reverter fixtures desnecessárias
+- Testes locais (`npm run check`, `docker build`, `docker run`)
+
+---
+
+## Scripts npm
 
 | Script | Descrição |
 |--------|-----------|
-| `npm run dev` | Executa em modo watch (tsx) |
-| `npm run build` | Compila `src/` para `output/` |
-| `npm start` | Roda o build compilado |
-| `npm test` | Executa testes com Jest |
-| `npm run test:watch` | Testes em modo watch |
-| `npm run test:coverage` | Cobertura de testes |
-| `npm run lint` | Verifica código com ESLint |
-| `npm run lint:fix` | Corrige problemas automáticos |
-| `npm run typecheck` | Checagem de tipos sem emitir arquivos |
+| `npm run dev` | Desenvolvimento com hot reload (tsx) |
+| `npm run build` | Compila `src/` → `output/` |
+| `npm start` | Executa o build compilado |
+| `npm test` | Testes Jest |
+| `npm run lint` | ESLint |
 | `npm run check` | typecheck + lint + test |
 
-## Status da implementação
+---
 
-- [x] Parser de listagem (título, preço, rating, disponibilidade, URLs)
-- [x] Exportação JSON e CSV
-- [ ] Paginação e coleta completa (`scraper.ts`)
-- [ ] Classificação com IA (`aiClassifier.ts`)
-- [ ] Dockerfile e pipeline GitLab CI/CD
+## Bônus (status)
 
-## Próximos passos
+| Item | Status |
+|------|--------|
+| Browser automation (páginas dinâmicas) | Não implementado — site é estático |
+| IA na extração (`aiClassifier.ts`) | Stub criado, integração pendente |
+| Cache no pipeline | Implementado (`node_modules` em lint/test) |
+| `docker-compose.yml` + database | Não implementado |
 
-1. Implementar `scrapeAllBooks` com paginação e delay entre requisições
-2. Adicionar Dockerfile, `docker-compose.yml` e `.gitlab-ci.yml`
-3. Documentar schema final e decisões técnicas no README
+---
+
+## Licença
+
+ISC
