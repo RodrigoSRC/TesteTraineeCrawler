@@ -349,6 +349,9 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 | IA sugeriu fixtures HTML separadas para testes de paginação | Já havia testes inline suficientes — **reverti** o que era capricho, não requisito |
 | Erro de schema no `.gitlab-ci.yml` (`:` no YAML)            | Aprendi que colons em strings precisam de aspas simples no YAML                    |
 | Tentativa de “completar etapa” sem questionar               | Passo a validar se cada entrega está no PDF antes de adicionar complexidade        |
+| Build Docker travava no passo `chown -R /app` (Windows)      | `chown` recursivo em `node_modules` é lento no Docker Desktop — limitamos a `output/` |
+| docker-compose scrapeava mas não persistia no Postgres       | Volume `./output:/app/output` sobrescrevia JS compilado antigo — separamos dados (`OUTPUT_DIR=/app/data`) do código |
+| Fix de runtime mergeado depois da PR da feature              | Correções ficaram uncommitted na branch antiga — PR separada `fix/docker-compose-runtime` |
 
 ### Aprendizados pessoais (via IA + prática)
 
