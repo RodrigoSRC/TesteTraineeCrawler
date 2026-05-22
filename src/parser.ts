@@ -61,3 +61,14 @@ export function parseBooksFromHtml(html: string, baseUrl: string): Book[] {
 
   return books;
 }
+
+/**
+ * Extrai a descrição textual da página de detalhe de um livro.
+ * O site usa um sub-header `#product_description` seguido de um `<p>`.
+ */
+export function parseBookDescriptionFromHtml(html: string): string | null {
+  const $ = cheerio.load(html);
+  const description = $('#product_description').nextAll('p').first().text().replace(/\s+/g, ' ').trim();
+
+  return description.length > 0 ? description : null;
+}

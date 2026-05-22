@@ -46,6 +46,22 @@ docker run --rm -v "${PWD}/output:/app/output" teste-trainee-crawler
 
 **Comportamento esperado:** o container executa o scraper, imprime `Scraping concluído: 1000 livros salvos em output/` e **encerra**. Com `--rm`, o container some após terminar — isso é normal para um job batch.
 
+### Com classificação IA (bônus, opcional)
+
+Requer chave de API OpenAI (ou compatível). Copie `.env.example` → `.env` e configure:
+
+```bash
+ENABLE_AI_CLASSIFIER=true
+OPENAI_API_KEY=sk-...
+AI_MAX_BOOKS=5   # limita livros enriquecidos por execução (padrão: 5)
+```
+
+```bash
+npm run build && npm start
+```
+
+O scraper coleta ~1000 livros normalmente e enriquece os **primeiros N** (`AI_MAX_BOOKS`) visitando a página de detalhe, extraindo a descrição em texto livre e usando um LLM para inferir `genres` e `summary`. Sem `OPENAI_API_KEY`, o enriquecimento é ignorado com aviso no log.
+
 ---
 
 ## Estrutura do projeto
@@ -58,7 +74,7 @@ src/
   saveJson.ts      # persistência JSON
   saveCsv.ts       # persistência CSV
   types.ts         # schema Book e config
-  aiClassifier.ts  # bônus LLM (stub, não integrado)
+  aiClassifier.ts  # bônus LLM — classifica descrições (opcional via env)
 tests/
   scraper.test.ts  # parser, exportação e paginação mockada
 output/            # build compilado + dados gerados
@@ -73,15 +89,18 @@ Dockerfile
 
 Cada livro segue a interface `Book`:
 
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `title` | `string` | Título do livro |
-| `price` | `number` | Preço numérico (ex.: `51.77`) |
-| `priceFormatted` | `string` | Preço original com símbolo (ex.: `£51.77`) |
-| `rating` | `number` | Estrelas de 1 a 5 (0 se ausente) |
-| `availability` | `string` | Texto de disponibilidade (ex.: `In stock`) |
-| `url` | `string` | URL absoluta da página do livro |
-| `imageUrl` | `string` | URL absoluta da capa |
+| Campo            | Tipo        | Descrição                                        |
+| ---------------- | ----------- | ------------------------------------------------ |
+| `title`          | `string`    | Título do livro                                  |
+| `price`          | `number`    | Preço numérico (ex.: `51.77`)                    |
+| `priceFormatted` | `string`    | Preço original com símbolo (ex.: `£51.77`)       |
+| `rating`         | `number`    | Estrelas de 1 a 5 (0 se ausente)                 |
+| `availability`   | `string`    | Texto de disponibilidade (ex.: `In stock`)       |
+| `url`            | `string`    | URL absoluta da página do livro                  |
+| `imageUrl`       | `string`    | URL absoluta da capa                             |
+| `description`    | `string?`   | Descrição da página de detalhe (só com IA ativa) |
+| `genres`         | `string[]?` | Gêneros inferidos por LLM                        |
+| `summary`        | `string?`   | Resumo de uma frase gerado por LLM               |
 
 ### Exemplo JSON
 
@@ -195,9 +214,9 @@ Por isso **não há `EXPOSE` de porta** no Dockerfile: a “porta correta” nes
 
 ### Dockerfile multi-stage
 
-| Stage | Função |
-|-------|--------|
-| `builder` | `npm ci` completo + `npm run build` (TypeScript → JavaScript) |
+| Stage     | Função                                                                           |
+| --------- | -------------------------------------------------------------------------------- |
+| `builder` | `npm ci` completo + `npm run build` (TypeScript → JavaScript)                    |
 | `runtime` | `npm ci --omit=dev` (só `axios` e `cheerio`) + JS compilado copiado de `builder` |
 
 Benefícios: imagem final menor, sem Jest/ESLint/TypeScript, usuário **non-root** (`scraper`).
@@ -214,15 +233,15 @@ Testes de `getNextPageUrl` e `scrapeAllBooks` usam HTML mockado **inline** no ar
 
 ## O que faria com mais tempo
 
-| Área | Melhoria |
-|------|----------|
-| **Resiliência** | Retry com backoff exponencial, circuit breaker, logging estruturado |
-| **Anti-bot** | Rotação de User-Agent, proxies, rate limiting configurável |
-| **Observabilidade** | Métricas (livros/min, erros por página), alertas, traces |
-| **Scrapy / fila** | Para escala: filas (SQS/RabbitMQ), workers paralelos com limites |
-| **IA (bônus)** | Integrar `aiClassifier.ts` para enriquecer descrições dos livros via LLM |
-| **Persistência** | `docker-compose` com PostgreSQL + upsert incremental |
-| **CI** | Scan de vulnerabilidades na imagem (Trivy), deploy real via Terraform |
+| Área                | Melhoria                                                              |
+| ------------------- | --------------------------------------------------------------------- |
+| **Resiliência**     | Retry com backoff exponencial, circuit breaker, logging estruturado   |
+| **Anti-bot**        | Rotação de User-Agent, proxies, rate limiting configurável            |
+| **Observabilidade** | Métricas (livros/min, erros por página), alertas, traces              |
+| **Scrapy / fila**   | Para escala: filas (SQS/RabbitMQ), workers paralelos com limites      |
+| **IA (bônus)**      | `aiClassifier.ts` integrado — LLM extrai gêneros/resumo da descrição  |
+| **Persistência**    | `docker-compose` com PostgreSQL + upsert incremental                  |
+| **CI**              | Scan de vulnerabilidades na imagem (Trivy), deploy real via Terraform |
 
 ---
 
@@ -232,21 +251,22 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 
 ### O que funcionou bem
 
-| Unde usei | Prompt / abordagem | Resultado |
-|-----------|-------------------|-----------|
-| Setup inicial | Estrutura modular (`parser`, `scraper`, exporters), Jest, ESLint | Base organizada rapidamente |
-| Paginação | Implementar `scrapeAllBooks`, `getNextPageUrl`, testes mockados | Scraper completo (~1000 livros) |
-| Dockerfile | Multi-stage, non-root, Alpine, comentários | Build e run validados localmente |
-| GitLab CI | Stages lint/test/build/deploy, cache npm, variáveis de registry | Pipeline alinhado ao PDF |
-| Dúvidas conceituais | “Por que container batch não expõe porta?”, “O que é multi-stage?” | Acelerei aprendizado de Docker/CI |
+| Unde usei           | Prompt / abordagem                                                      | Resultado                                      |
+| ------------------- | ----------------------------------------------------------------------- | ---------------------------------------------- |
+| Setup inicial       | Estrutura modular (`parser`, `scraper`, exporters), Jest, ESLint        | Base organizada rapidamente                    |
+| Paginação           | Implementar `scrapeAllBooks`, `getNextPageUrl`, testes mockados         | Scraper completo (~1000 livros)                |
+| Dockerfile          | Multi-stage, non-root, Alpine, comentários                              | Build e run validados localmente               |
+| GitLab CI           | Stages lint/test/build/deploy, cache npm, variáveis de registry         | Pipeline alinhado ao PDF                       |
+| Bônus IA            | `classifyBookDescription`, integração opcional via env, testes mockados | LLM parseia descrição livre → gêneros + resumo |
+| Dúvidas conceituais | “Por que container batch não expõe porta?”, “O que é multi-stage?”      | Acelerei aprendizado de Docker/CI              |
 
 ### O que não funcionou / ajustes que fiz
 
-| Situação | Lição |
-|----------|-------|
+| Situação                                                    | Lição                                                                              |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | IA sugeriu fixtures HTML separadas para testes de paginação | Já havia testes inline suficientes — **reverti** o que era capricho, não requisito |
-| Erro de schema no `.gitlab-ci.yml` (`:` no YAML) | Aprendi que colons em strings precisam de aspas simples no YAML |
-| Tentativa de “completar etapa” sem questionar | Passo a validar se cada entrega está no PDF antes de adicionar complexidade |
+| Erro de schema no `.gitlab-ci.yml` (`:` no YAML)            | Aprendi que colons em strings precisam de aspas simples no YAML                    |
+| Tentativa de “completar etapa” sem questionar               | Passo a validar se cada entrega está no PDF antes de adicionar complexidade        |
 
 ### Aprendizados pessoais (via IA + prática)
 
@@ -266,25 +286,25 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 
 ## Scripts npm
 
-| Script | Descrição |
-|--------|-----------|
-| `npm run dev` | Desenvolvimento com hot reload (tsx) |
-| `npm run build` | Compila `src/` → `output/` |
-| `npm start` | Executa o build compilado |
-| `npm test` | Testes Jest |
-| `npm run lint` | ESLint |
-| `npm run check` | typecheck + lint + test |
+| Script          | Descrição                            |
+| --------------- | ------------------------------------ |
+| `npm run dev`   | Desenvolvimento com hot reload (tsx) |
+| `npm run build` | Compila `src/` → `output/`           |
+| `npm start`     | Executa o build compilado            |
+| `npm test`      | Testes Jest                          |
+| `npm run lint`  | ESLint                               |
+| `npm run check` | typecheck + lint + test              |
 
 ---
 
 ## Bônus (status)
 
-| Item | Status |
-|------|--------|
-| Browser automation (páginas dinâmicas) | Não implementado — site é estático |
-| IA na extração (`aiClassifier.ts`) | Stub criado, integração pendente |
-| Cache no pipeline | Implementado (`node_modules` em lint/test) |
-| `docker-compose.yml` + database | Não implementado |
+| Item                                   | Status                                                                  |
+| -------------------------------------- | ----------------------------------------------------------------------- |
+| Browser automation (páginas dinâmicas) | Não implementado — site é estático; ver Etapa 9 em `ETAPAS.local.md`    |
+| IA na extração (`aiClassifier.ts`)     | **Implementado** — opt-in via `ENABLE_AI_CLASSIFIER` + `OPENAI_API_KEY` |
+| Cache no pipeline                      | **Implementado** (`node_modules` em lint/test)                          |
+| `docker-compose.yml` + database        | Não implementado — ver Etapa 10 em `ETAPAS.local.md`                    |
 
 ---
 

@@ -1,14 +1,42 @@
-import { scrapeAllBooks } from './scraper';
+import {
+  enrichBooksWithAi,
+  getAiClassifierConfigFromEnv,
+  isAiClassifierEnabled,
+} from './aiClassifier';
+import { fetchPage, scrapeAllBooks } from './scraper';
 import { saveCsv } from './saveCsv';
 import { saveJson } from './saveJson';
+import { DEFAULT_SCRAPER_CONFIG } from './types';
 
 async function main(): Promise<void> {
-  const books = await scrapeAllBooks();
+  let books = await scrapeAllBooks();
+
+  if (isAiClassifierEnabled()) {
+    const aiConfig = getAiClassifierConfigFromEnv();
+    if (!aiConfig) {
+      console.warn(
+        'ENABLE_AI_CLASSIFIER=true, mas OPENAI_API_KEY não está definida — enriquecimento IA ignorado.',
+      );
+    } else {
+      console.log('[ai] Enriquecendo livros com classificação LLM...');
+      books = await enrichBooksWithAi(books, {
+        fetchPage,
+        scraperConfig: DEFAULT_SCRAPER_CONFIG,
+        aiConfig,
+      });
+    }
+  }
 
   await saveJson(books);
   await saveCsv(books);
 
-  console.log(`Scraping concluído: ${books.length} livros salvos em output/`);
+  const aiEnriched = books.filter((book) => book.genres?.length).length;
+  const aiSuffix =
+    isAiClassifierEnabled() && aiEnriched > 0
+      ? ` (${aiEnriched} com classificação IA)`
+      : '';
+
+  console.log(`Scraping concluído: ${books.length} livros salvos em output/${aiSuffix}`);
 }
 
 main().catch((error: unknown) => {
