@@ -15,7 +15,8 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "scrape:browser-demo": "tsx src/browserDemo.ts"
   },
   "keywords": [
     "scraper",
@@ -36,6 +37,7 @@
     "@types/node": "^25.9.1",
     "eslint": "^10.4.0",
     "jest": "^30.4.2",
+    "playwright": "^1.60.0",
     "ts-jest": "^29.4.10",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3",

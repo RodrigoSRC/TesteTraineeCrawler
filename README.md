@@ -62,6 +62,32 @@ npm run build && npm start
 
 O scraper coleta ~1000 livros normalmente e enriquece os **primeiros N** (`AI_MAX_BOOKS`) visitando a página de detalhe, extraindo a descrição em texto livre e usando um LLM para inferir `genres` e `summary`. Sem `OPENAI_API_KEY`, o enriquecimento é ignorado com aviso no log.
 
+### Com browser automation (bônus, opcional)
+
+O site [books.toscrape.com](https://books.toscrape.com) é **HTML estático** — o scraper principal usa **Cheerio + axios** e não precisa de browser headless. Este bônus demonstra capacidade com **Playwright** para catálogos renderizados por JavaScript (infinite scroll, botão “load more”, etc.).
+
+Instale browsers do Playwright uma vez (dev):
+
+```bash
+npx playwright install chromium
+```
+
+Demo com fixture local (`tests/fixtures/dynamic-catalog.html` — simula JS + load-more):
+
+```bash
+npm run scrape:browser-demo
+```
+
+Saída esperada: 3 livros extraídos após o browser clicar/scrollar até carregar todos os batches.
+
+Para apontar outra URL dinâmica:
+
+```bash
+BROWSER_SCRAPER_URL=https://exemplo.com/catalogo-dinamico npm run scrape:browser-demo
+```
+
+O módulo `src/browserScraper.ts` fica **separado** do pipeline principal (`npm start`). Testes no CI usam mocks — não baixam browser nem acessam sites externos.
+
 ---
 
 ## Estrutura do projeto
@@ -75,8 +101,13 @@ src/
   saveCsv.ts       # persistência CSV
   types.ts         # schema Book e config
   aiClassifier.ts  # bônus LLM — classifica descrições (opcional via env)
+  browserScraper.ts # bônus Playwright — catálogos dinâmicos (opcional)
+  browserDemo.ts    # demo local com fixture HTML (npm run scrape:browser-demo)
 tests/
   scraper.test.ts  # parser, exportação e paginação mockada
+  browserScraper.test.ts # Playwright mockado (sem browser real no CI)
+  fixtures/
+    dynamic-catalog.html # página JS simulada (load-more / scroll)
 output/            # build compilado + dados gerados
 Dockerfile
 .dockerignore
@@ -190,6 +221,8 @@ Escolhi a stack que permitia iterar rápido com tipagem estática, ecossistema m
 
 O site é **HTML estático** — não exige browser headless. Cheerio é leve, rápido e suficiente para seletores como `article.product_pod` e `li.next a`.
 
+Para sites com conteúdo renderizado por JavaScript, incluí o bônus `browserScraper.ts` (Playwright) com fixture local e testes mockados — separado do fluxo principal para não inflar a imagem Docker de produção.
+
 ### Rating via classe CSS
 
 O site expõe estrelas em classes (`star-rating Three`, etc.). Mapeio explícito para número 1–5 em `mapStarRating`, com fallback `0` se a classe não existir.
@@ -240,6 +273,7 @@ Testes de `getNextPageUrl` e `scrapeAllBooks` usam HTML mockado **inline** no ar
 | **Observabilidade** | Métricas (livros/min, erros por página), alertas, traces              |
 | **Scrapy / fila**   | Para escala: filas (SQS/RabbitMQ), workers paralelos com limites      |
 | **IA (bônus)**      | `aiClassifier.ts` integrado — LLM extrai gêneros/resumo da descrição  |
+| **Browser (bônus)** | `browserScraper.ts` — Playwright para infinite scroll / SPAs          |
 | **Persistência**    | `docker-compose` com PostgreSQL + upsert incremental                  |
 | **CI**              | Scan de vulnerabilidades na imagem (Trivy), deploy real via Terraform |
 
@@ -258,6 +292,7 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 | Dockerfile          | Multi-stage, non-root, Alpine, comentários                              | Build e run validados localmente               |
 | GitLab CI           | Stages lint/test/build/deploy, cache npm, variáveis de registry         | Pipeline alinhado ao PDF                       |
 | Bônus IA            | `classifyBookDescription`, integração opcional via env, testes mockados | LLM parseia descrição livre → gêneros + resumo |
+| Bônus browser       | `browserScraper.ts`, fixture HTML local, Playwright mockado no CI       | Demo de infinite scroll sem depender do site real |
 | Dúvidas conceituais | “Por que container batch não expõe porta?”, “O que é multi-stage?”      | Acelerei aprendizado de Docker/CI              |
 
 ### O que não funcionou / ajustes que fiz
@@ -294,6 +329,7 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 | `npm test`      | Testes Jest                          |
 | `npm run lint`  | ESLint                               |
 | `npm run check` | typecheck + lint + test              |
+| `npm run scrape:browser-demo` | Demo Playwright com fixture local (bônus) |
 
 ---
 
@@ -301,7 +337,7 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 
 | Item                                   | Status                                                                  |
 | -------------------------------------- | ----------------------------------------------------------------------- |
-| Browser automation (páginas dinâmicas) | Não implementado — site é estático; ver Etapa 9 em `ETAPAS.local.md`    |
+| Browser automation (páginas dinâmicas) | **Implementado** — `browserScraper.ts` + demo com fixture local |
 | IA na extração (`aiClassifier.ts`)     | **Implementado** — opt-in via `ENABLE_AI_CLASSIFIER` + `OPENAI_API_KEY` |
 | Cache no pipeline                      | **Implementado** (`node_modules` em lint/test)                          |
 | `docker-compose.yml` + database        | Não implementado — ver Etapa 10 em `ETAPAS.local.md`                    |

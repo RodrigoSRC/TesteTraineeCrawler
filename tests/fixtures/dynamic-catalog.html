@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Dynamic Book Catalog (fixture)</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 2rem;
+      }
+      #catalog {
+        display: grid;
+        gap: 1rem;
+      }
+      .product_pod {
+        border: 1px solid #ccc;
+        padding: 1rem;
+        max-width: 320px;
+      }
+      #load-more {
+        margin-top: 1rem;
+        padding: 0.5rem 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Dynamic catalog (JS-rendered)</h1>
+    <p>Simula infinite scroll / load-more — conteúdo não existe no HTML inicial.</p>
+    <div id="catalog"></div>
+    <button id="load-more" data-load-more type="button">Load more</button>
+
+    <script>
+      const BASE_URL = 'https://books.toscrape.com/';
+
+      const batches = [
+        [
+          {
+            title: 'A Light in the Attic',
+            href: 'catalogue/a-light-in-the-attic_1000/index.html',
+            price: '£51.77',
+            rating: 'Three',
+            image: 'media/cache/2c/da/2cdad67c44b002e7ead0cc35693c0e8b.jpg',
+          },
+        ],
+        [
+          {
+            title: 'Tipping the Velvet',
+            href: 'catalogue/tipping-the-velvet_999/index.html',
+            price: '£53.74',
+            rating: 'One',
+            image: 'media/cache/26/0c/260c6ae16bce31c8f8c95daddd9f4a1c.jpg',
+          },
+        ],
+        [
+          {
+            title: 'Soumission',
+            href: 'catalogue/soumission_998/index.html',
+            price: '£50.10',
+            rating: 'One',
+            image: 'media/cache/3e/ef/3eef99c9d9adef34639f510662022830.jpg',
+          },
+        ],
+      ];
+
+      let batchIndex = 0;
+      const catalog = document.getElementById('catalog');
+      const loadMoreBtn = document.getElementById('load-more');
+
+      function absoluteUrl(path) {
+        return new URL(path, BASE_URL).href;
+      }
+
+      function renderBook(book) {
+        const article = document.createElement('article');
+        article.className = 'product_pod';
+        article.innerHTML = `
+          <div class="image_container">
+            <a href="${absoluteUrl(book.href)}">
+              <img src="${absoluteUrl(book.image)}" class="thumbnail" alt="${book.title}" />
+            </a>
+          </div>
+          <p class="star-rating ${book.rating}"></p>
+          <h3><a href="${absoluteUrl(book.href)}" title="${book.title}">${book.title}</a></h3>
+          <div class="product_price">
+            <p class="price_color">${book.price}</p>
+            <p class="instock availability"><i class="icon-ok"></i> In stock</p>
+          </div>
+        `;
+        catalog.appendChild(article);
+      }
+
+      function loadNextBatch() {
+        if (batchIndex >= batches.length) {
+          loadMoreBtn.hidden = true;
+          return;
+        }
+        batches[batchIndex].forEach(renderBook);
+        batchIndex += 1;
+        if (batchIndex >= batches.length) {
+          loadMoreBtn.hidden = true;
+        }
+      }
+
+      loadMoreBtn.addEventListener('click', loadNextBatch);
+      window.addEventListener('scroll', () => {
+        const nearBottom =
+          window.innerHeight + window.scrollY >= document.body.offsetHeight - 40;
+        if (nearBottom && !loadMoreBtn.hidden) {
+          loadNextBatch();
+        }
+      });
+
+      loadNextBatch();
+    </script>
+  </body>
+</html>
