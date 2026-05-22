@@ -32,8 +32,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/output ./output
-
-RUN mkdir -p output && chown -R scraper:scraper /app
+# Só output precisa ser gravável pelo scraper (node_modules fica legível como root).
+RUN mkdir -p output && chown -R scraper:scraper output
 
 USER scraper
 
