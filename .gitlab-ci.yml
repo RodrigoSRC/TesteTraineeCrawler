@@ -1,0 +1,90 @@
+# Pipeline GitLab CI/CD — TesteTraineeCrawler
+#
+# Fluxo: lint → test → build (Docker) → deploy (simulado ECS, só main)
+# Variáveis de registry/tag vêm do GitLab (CI_REGISTRY*, CI_COMMIT_*).
+
+stages:
+  - lint
+  - test
+  - build
+  - deploy
+
+variables:
+  NODE_VERSION: "20"
+  # Tag da imagem Docker publicada no GitLab Container Registry
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  # Caminho completo da imagem (ex.: registry.gitlab.com/grupo/projeto)
+  REGISTRY_IMAGE: $CI_REGISTRY_IMAGE
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+
+# Cache npm compartilhado entre lint e test (acelera npm ci).
+default:
+  image: node:${NODE_VERSION}-alpine
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules/
+    policy: pull
+
+lint:
+  stage: lint
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules/
+    policy: pull-push
+  script:
+    - npm ci
+    - npm run lint
+
+test:
+  stage: test
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules/
+    policy: pull-push
+  script:
+    - npm ci
+    - npm test
+
+build:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+  script:
+    - docker build
+      -t "$REGISTRY_IMAGE:$IMAGE_TAG"
+      -t "$REGISTRY_IMAGE:latest"
+      .
+    - docker push "$REGISTRY_IMAGE:$IMAGE_TAG"
+    - docker push "$REGISTRY_IMAGE:latest"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+deploy:
+  stage: deploy
+  image: alpine:3.20
+  needs:
+    - build
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  script:
+    - echo "=== Deploy simulado (AWS ECS) ==="
+    - echo "Imagem: $REGISTRY_IMAGE:$IMAGE_TAG"
+    - echo "aws ecr get-login-password --region \$AWS_REGION | docker login --username AWS --password-stdin \$ECR_REGISTRY"
+    - echo "aws ecs register-task-definition --cli-input-json file://task-definition.json"
+    - echo "aws ecs update-service --cluster scraper-cluster --service scraper-service --force-new-deployment"
+    - echo "aws ecs wait services-stable --cluster scraper-cluster --services scraper-service"
+    - echo "Deploy concluído (simulação — nenhum comando AWS foi executado)."
