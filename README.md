@@ -263,6 +263,29 @@ Jobs `lint` e `test` compartilham cache de `node_modules/` keyed por `package-lo
 
 Escolhi a stack que permitia iterar rápido com tipagem estática, ecossistema maduro para HTTP/parsing e testes (Jest). O desafio permite outra linguagem.
 
+### Arquitetura plana (em vez de Clean Architecture)
+
+Na primeira versão, segui uma estrutura em camadas (`domain/`, `application/`, `infrastructure/`, `composition/`) com portas, casos de uso e injeção de dependências — padrão válido em sistemas grandes, mas **desproporcional** para este desafio.
+
+Após reler o PDF e discutir com IA, refatorei para arquitetura **plana e modular**:
+
+```
+src/scraper.ts   → HTTP + paginação
+src/parser.ts    → extração Cheerio
+src/saveJson.ts  → persistência JSON
+src/saveCsv.ts   → persistência CSV
+src/types.ts     → schema Book
+src/index.ts     → orquestração
+```
+
+**Por quê:** o escopo é um scraper batch com responsabilidades claras e prazo de 48h. Camadas extras aumentariam boilerplate (portas, adapters, wiring) sem ganho real neste contexto. A estrutura plana mantém separação de concerns, facilita testes e deixa o código legível para quem revisa o PR.
+
+**Quando faria diferente:** com múltiplas fontes de dados, filas de workers, API REST ou regras de negócio complexas, aí sim extrairia interfaces e camadas.
+
+### PRs pequenas por etapa
+
+Organizei o histórico Git em branches focadas (`feat/initial-setup`, `feat/scrape-all-books`, `feat/docker`, `ci/gitlab-pipeline`, bônus separados). Cada PR cobre uma entrega do PDF — facilita revisão e demonstra evolução incremental, não um commit monolítico.
+
 ### Cheerio para parsing
 
 O site é **HTML estático** — não exige browser headless. Cheerio é leve, rápido e suficiente para seletores como `article.product_pod` e `li.next a`.
@@ -331,7 +354,7 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 
 ### O que funcionou bem
 
-| Unde usei           | Prompt / abordagem                                                      | Resultado                                      |
+| Onde usei           | Prompt / abordagem                                                      | Resultado                                      |
 | ------------------- | ----------------------------------------------------------------------- | ---------------------------------------------- |
 | Setup inicial       | Estrutura modular (`parser`, `scraper`, exporters), Jest, ESLint        | Base organizada rapidamente                    |
 | Paginação           | Implementar `scrapeAllBooks`, `getNextPageUrl`, testes mockados         | Scraper completo (~1000 livros)                |
@@ -346,6 +369,7 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 
 | Situação                                                    | Lição                                                                              |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| IA sugeriu Clean Architecture (`domain/`, `application/`, portas) | Over-engineering para um scraper de 48h — **refatorei para estrutura plana** após validar escopo no PDF |
 | IA sugeriu fixtures HTML separadas para testes de paginação | Já havia testes inline suficientes — **reverti** o que era capricho, não requisito |
 | Erro de schema no `.gitlab-ci.yml` (`:` no YAML)            | Aprendi que colons em strings precisam de aspas simples no YAML                    |
 | Tentativa de “completar etapa” sem questionar               | Passo a validar se cada entrega está no PDF antes de adicionar complexidade        |
@@ -360,12 +384,17 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 - **Cache de camadas Docker:** separar `COPY package.json` + `npm ci` de `COPY src` evita reinstalar deps a cada mudança de código.
 - **GitLab CI ≠ GitHub Actions:** mesma ideia (automatizar push), sintaxe e variáveis diferentes.
 - **IA como pair programmer:** ótima para boilerplate e explicações; decisão de escopo e revisão crítica continuam humanas.
+- **Escopo vs complexidade:** nem toda sugestão “correta” em teoria é adequada ao prazo e ao PDF — aprendi a filtrar.
+- **Bônus isolados:** Playwright e PostgreSQL ficam fora do fluxo principal para não inflar a imagem Docker nem complicar quem roda só `npm start`.
 
 ### O que **não** foi gerado por IA
 
-- Validação manual dos 1000 livros e conferência de URLs/preços no site
-- Decisão de reverter fixtures desnecessárias
-- Testes locais (`npm run check`, `docker build`, `docker run`)
+- Decisão de abandonar a arquitetura em camadas e simplificar para módulos planos
+- Estratégia de branches e PRs por etapa do desafio
+- Validação manual dos ~1000 livros e conferência de URLs/preços no site
+- Decisão de reverter fixtures e complexidade desnecessária
+- Diagnóstico e correção do bug docker-compose no Windows (`OUTPUT_DIR` vs volume em `/app/output`)
+- Testes locais (`npm run check`, `docker build`, `docker run`, `docker compose up`)
 
 ---
 
