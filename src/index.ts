@@ -6,6 +6,10 @@ import {
 import { fetchPage, scrapeAllBooks } from './scraper';
 import { saveCsv } from './saveCsv';
 import { saveJson } from './saveJson';
+import {
+  isDatabasePersistenceEnabled,
+  saveBooksToPostgres,
+} from './savePostgres';
 import { DEFAULT_SCRAPER_CONFIG } from './types';
 
 async function main(): Promise<void> {
@@ -30,13 +34,21 @@ async function main(): Promise<void> {
   await saveJson(books);
   await saveCsv(books);
 
+  let dbSuffix = '';
+  if (isDatabasePersistenceEnabled()) {
+    const persisted = await saveBooksToPostgres(books);
+    dbSuffix = ` + ${persisted} no PostgreSQL`;
+  }
+
   const aiEnriched = books.filter((book) => book.genres?.length).length;
   const aiSuffix =
     isAiClassifierEnabled() && aiEnriched > 0
       ? ` (${aiEnriched} com classificação IA)`
       : '';
 
-  console.log(`Scraping concluído: ${books.length} livros salvos em output/${aiSuffix}`);
+  console.log(
+    `Scraping concluído: ${books.length} livros salvos em output/${aiSuffix}${dbSuffix}`,
+  );
 }
 
 main().catch((error: unknown) => {
