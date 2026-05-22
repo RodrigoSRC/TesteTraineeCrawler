@@ -88,6 +88,42 @@ BROWSER_SCRAPER_URL=https://exemplo.com/catalogo-dinamico npm run scrape:browser
 
 O módulo `src/browserScraper.ts` fica **separado** do pipeline principal (`npm start`). Testes no CI usam mocks — não baixam browser nem acessam sites externos.
 
+### Com docker-compose + PostgreSQL (bônus, opcional)
+
+Stack local com **scraper + PostgreSQL 16** para persistência além de JSON/CSV. Quando `DATABASE_URL` está definida, o scraper faz **upsert** na tabela `books` (chave: `url`).
+
+```bash
+docker compose up --build
+```
+
+O serviço `db` sobe com healthcheck; o `scraper` só inicia após o Postgres estar pronto. Arquivos continuam em `output/` via volume montado.
+
+**Comportamento esperado:** logs do scraper com `Scraping concluído: 1000 livros salvos em output/ + 1000 no PostgreSQL`, depois o container encerra.
+
+Conferir dados no banco (com stack rodando ou após subir só o Postgres):
+
+```bash
+docker compose exec db psql -U scraper -d books -c "SELECT COUNT(*) FROM books;"
+docker compose exec db psql -U scraper -d books -c "SELECT title, price, rating FROM books LIMIT 3;"
+```
+
+Persistência local **sem** docker-compose (Postgres já rodando na máquina):
+
+```bash
+# .env ou shell
+DATABASE_URL=postgresql://scraper:scraper@localhost:5432/books
+
+npm run build && npm start
+```
+
+Credenciais padrão da stack (`docker-compose.yml`): usuário/senha `scraper`, database `books`, porta `5432`.
+
+Para derrubar volumes e recomeçar do zero:
+
+```bash
+docker compose down -v
+```
+
 ---
 
 ## Estrutura do projeto
@@ -99,6 +135,7 @@ src/
   parser.ts        # extração com Cheerio
   saveJson.ts      # persistência JSON
   saveCsv.ts       # persistência CSV
+  savePostgres.ts  # bônus PostgreSQL — upsert quando DATABASE_URL está setada
   types.ts         # schema Book e config
   aiClassifier.ts  # bônus LLM — classifica descrições (opcional via env)
   browserScraper.ts # bônus Playwright — catálogos dinâmicos (opcional)
@@ -110,6 +147,7 @@ tests/
     dynamic-catalog.html # página JS simulada (load-more / scroll)
 output/            # build compilado + dados gerados
 Dockerfile
+docker-compose.yml # bônus stack scraper + postgres:16-alpine
 .dockerignore
 .gitlab-ci.yml
 ```
@@ -274,7 +312,7 @@ Testes de `getNextPageUrl` e `scrapeAllBooks` usam HTML mockado **inline** no ar
 | **Scrapy / fila**   | Para escala: filas (SQS/RabbitMQ), workers paralelos com limites      |
 | **IA (bônus)**      | `aiClassifier.ts` integrado — LLM extrai gêneros/resumo da descrição  |
 | **Browser (bônus)** | `browserScraper.ts` — Playwright para infinite scroll / SPAs          |
-| **Persistência**    | `docker-compose` com PostgreSQL + upsert incremental                  |
+| **Persistência**    | `docker-compose.yml` + `savePostgres.ts` — upsert incremental no PostgreSQL |
 | **CI**              | Scan de vulnerabilidades na imagem (Trivy), deploy real via Terraform |
 
 ---
@@ -293,6 +331,7 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 | GitLab CI           | Stages lint/test/build/deploy, cache npm, variáveis de registry         | Pipeline alinhado ao PDF                       |
 | Bônus IA            | `classifyBookDescription`, integração opcional via env, testes mockados | LLM parseia descrição livre → gêneros + resumo |
 | Bônus browser       | `browserScraper.ts`, fixture HTML local, Playwright mockado no CI       | Demo de infinite scroll sem depender do site real |
+| Bônus docker-compose | `savePostgres.ts`, upsert por URL, stack com postgres:16-alpine        | JSON/CSV + banco na mesma execução              |
 | Dúvidas conceituais | “Por que container batch não expõe porta?”, “O que é multi-stage?”      | Acelerei aprendizado de Docker/CI              |
 
 ### O que não funcionou / ajustes que fiz
@@ -330,6 +369,7 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 | `npm run lint`  | ESLint                               |
 | `npm run check` | typecheck + lint + test              |
 | `npm run scrape:browser-demo` | Demo Playwright com fixture local (bônus) |
+| `docker compose up --build` | Stack scraper + PostgreSQL (bônus) |
 
 ---
 
@@ -340,7 +380,7 @@ O desafio **encoraja** o uso de IA. Abaixo, registro honesto de como utilizei **
 | Browser automation (páginas dinâmicas) | **Implementado** — `browserScraper.ts` + demo com fixture local |
 | IA na extração (`aiClassifier.ts`)     | **Implementado** — opt-in via `ENABLE_AI_CLASSIFIER` + `OPENAI_API_KEY` |
 | Cache no pipeline                      | **Implementado** (`node_modules` em lint/test)                          |
-| `docker-compose.yml` + database        | Não implementado — ver Etapa 10 em `ETAPAS.local.md`                    |
+| `docker-compose.yml` + database        | **Implementado** — opt-in via `DATABASE_URL` + upsert em `savePostgres.ts` |
 
 ---
 
